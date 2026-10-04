@@ -71,14 +71,27 @@ func scanCompletionFile(db *sql.DB, path, source string, now time.Time) error {
 	// Codex's first session_meta line supplies stable session ID and cwd.
 	var header struct {
 		Payload struct {
-			ID  string `json:"id"`
-			Cwd string `json:"cwd"`
+			ID     string          `json:"id"`
+			Cwd    string          `json:"cwd"`
+			Source json.RawMessage `json:"source"`
 		} `json:"payload"`
 	}
 	first := bufio.NewScanner(io.LimitReader(f, 1<<20))
 	first.Buffer(make([]byte, 4096), 1<<20)
 	if first.Scan() {
 		_ = json.Unmarshal(first.Bytes(), &header)
+	}
+	// Codex's approval reviewer writes final answers too. These are internal
+	// policy decisions, not completed user work. Preserve actual work agents.
+	if source == "codex" {
+		var origin struct {
+			Subagent struct {
+				Other string `json:"other"`
+			} `json:"subagent"`
+		}
+		if json.Unmarshal(header.Payload.Source, &origin) == nil && origin.Subagent.Other == "guardian" {
+			return nil
+		}
 	}
 	st, err := f.Stat()
 	if err != nil {

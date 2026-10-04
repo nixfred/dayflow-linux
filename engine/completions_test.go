@@ -136,4 +136,16 @@ func TestCompletionWatcherNativePhaseAndRetention(t *testing.T) {
 	if text != "Shipped native fix." {
 		t.Fatal(text)
 	}
+	guardian := strings.Replace(header, `"cwd":"/project"`, `"cwd":"/project","source":{"subagent":{"other":"guardian"}}`, 1)
+	guardian = strings.Replace(guardian, `"id":"s"`, `"id":"guardian-session"`, 1)
+	if err := os.WriteFile(path, []byte(guardian+raw+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := scanCompletionFile(db, path, "codex", now); err != nil {
+		t.Fatal(err)
+	}
+	rows, err = completionsForDay(db, now)
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("guardian leaked: rows=%v err=%v", rows, err)
+	}
 }
