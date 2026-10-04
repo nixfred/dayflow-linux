@@ -17,6 +17,7 @@ Panel {
   property var completions: []
   property string dateLabel: ""
   property bool paused: false
+  property string captureState: "unknown"
   property bool configured: true
   property bool onboardingSkipped: false
   property string errorText: ""
@@ -106,8 +107,8 @@ Panel {
     return false
   }
 
-  readonly property color foreground: dayflow.bar ? dayflow.bar.foreground : Color.foreground
-  readonly property color dim: Qt.darker(dayflow.foreground, 1.5)
+  readonly property color foreground: Color.popups.text
+  readonly property color dim: Qt.alpha(dayflow.foreground, 0.68)
   readonly property string fontFamily: dayflow.bar ? dayflow.bar.fontFamily : Style.font.family
 
   onNoticeChanged: {
@@ -137,7 +138,7 @@ Panel {
     if (tab === "standup") {
       if (!standupFetchProc.running) standupFetchProc.running = true
       if (!goalProc.running) goalProc.running = true
-    } else if (tab === "week") {
+    } else if (tab === "week" || tab === "context") {
       if (!insightsFetchProc.running) insightsFetchProc.running = true
       if (!weekTimelineProc.running) weekTimelineProc.running = true
       if (!weeklyProc.running) weeklyProc.running = true
@@ -164,10 +165,16 @@ Panel {
   }
 
   Timer {
-    interval: 2000
+    interval: dayflow.currentTab === "today" ? 2000 : 5000
     repeat: true
-    running: dayflow.opened && dayflow.currentTab === "today" && !dayflow.engineMissing
+    running: (dayflow.opened || dayflow.fullViewOpen) && !dayflow.engineMissing
     onTriggered: if (!timelineProc.running) dayflow.loadTimeline()
+  }
+
+  Timer {
+    interval: 5000; repeat: true
+    running: (dayflow.opened || dayflow.fullViewOpen) && !dayflow.engineMissing
+    onTriggered: if (!statusProc.running && !dayflow.engineInstalling) statusProc.running = true
   }
 
   onCurrentTabChanged: refreshForTab(currentTab)
@@ -407,6 +414,7 @@ Panel {
     try {
       var s = JSON.parse(raw)
       dayflow.paused = s.paused === true
+      dayflow.captureState = s.capture_state || "unknown"
       dayflow.configured = s.configured !== false
       dayflow.modelName = s.model || ""
       dayflow.activeApp = s.active_app || ""
@@ -1189,433 +1197,28 @@ Panel {
     id: settingsCatModel
   }
 
+  // Dashboard actions keep engine processes owned by this persistent panel.
+  function toggleCapture() { if (!toggleProc.running) toggleProc.running = true }
+  function ignoreCurrentApp() { if (activeApp !== "" && !ignoreProc.running) ignoreProc.running = true }
+  function summarizeNow() { if (blocksPending > 0 && !summarizeProc.running) summarizeProc.running = true }
+  readonly property bool summarizing: summarizeProc.running
+
   KeyboardPanel {
     id: panel
     anchorItem: dayflow.anchorItem
     owner: dayflow.hostWidget || dayflow
     bar: dayflow.bar
     open: dayflow.opened
+    property var state: dayflow
     focusTarget: keyCatcher
-    contentWidth: panel.fittedContentWidth(dayflow.currentTab === "settings" && dayflow.configured ? Style.space(1180) : (dayflow.expanded ? Style.space(780) : Style.space(620)))
-    contentHeight: panel.fittedContentHeight(content.implicitHeight)
-
+    contentWidth: panel.fittedContentWidth(Style.space(1440))
+    contentHeight: panel.fittedContentHeight(Style.space(740))
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
       onCloseRequested: dayflow.close()
       onTabRequested: function(direction) { dayflow.switchPanel(direction) }
-
-      Column {
-        id: content
-        width: parent.width
-        leftPadding: Style.space(10)
-        rightPadding: Style.space(10)
-        topPadding: Style.space(10)
-        bottomPadding: Style.space(10)
-        spacing: Style.space(8)
-
-        // ---- header ----
-        Row {
-          width: parent.width - content.leftPadding - content.rightPadding
-          spacing: Style.space(6)
-
-          Column {
-            width: parent.width - toggleBtn.width - expandBtn.width - Style.space(6) - parent.spacing
-            spacing: Style.space(1)
-
-            Row {
-              spacing: Style.space(5)
-
-              Rectangle {
-                width: Style.space(7)
-                height: Style.space(7)
-                radius: width / 2
-                anchors.verticalCenter: parent.verticalCenter
-                color: dayflow.paused ? Color.urgent : Color.accent
-              }
-
-              Text {
-                text: "Dayflow"
-                textFormat: Text.PlainText
-                color: dayflow.foreground
-                font.family: dayflow.fontFamily
-                font.pixelSize: Style.font.subtitle
-                font.bold: true
-              }
-            }
-
-            Text {
-              text: (dayflow.paused ? "paused" : "recording") + " · " + dayflow.modelShort()
-              textFormat: Text.PlainText
-              color: dayflow.dim
-              font.family: dayflow.fontFamily
-              font.pixelSize: Style.font.caption
-              elide: Text.ElideRight
-              width: parent.width
-            }
-          }
-
-          Rectangle {
-            id: expandBtn
-            height: Style.space(26)
-            width: exg.implicitWidth + Style.space(14)
-            radius: Style.cornerRadius
-            color: mexg.containsMouse ? dayflow.accentFill(0.12) : "transparent"
-            border.color: dayflow.accentFill(0.5)
-
-            Text {
-              id: exg
-              anchors.centerIn: parent
-              text: dayflow.expanded ? "Shrink" : "Expand"
-              textFormat: Text.PlainText
-              color: dayflow.foreground
-              font.family: dayflow.fontFamily
-              font.pixelSize: Style.font.caption
-            }
-
-            MouseArea {
-              id: mexg
-              anchors.fill: parent
-              hoverEnabled: true
-              onClicked: {
-                dayflow.expanded = !dayflow.expanded
-                persistExpandedProc.command = ["dayflow", "config", "set", "panel_expanded",
-                  dayflow.expanded ? "true" : "false"]
-                persistExpandedProc.running = true
-              }
-            }
-          }
-
-          Rectangle {
-            id: toggleBtn
-            height: Style.space(26)
-            width: tgl.implicitWidth + Style.space(16)
-            radius: Style.cornerRadius
-            color: dayflow.paused
-              ? dayflow.accentFill(0.15)
-              : (mtgl.containsMouse ? dayflow.accentFill(0.12) : "transparent")
-            border.color: dayflow.accentFill(0.5)
-
-            Text {
-              id: tgl
-              anchors.centerIn: parent
-              text: dayflow.paused ? "Resume capture" : "Pause"
-              textFormat: Text.PlainText
-              color: dayflow.foreground
-              font.family: dayflow.fontFamily
-              font.pixelSize: Style.font.caption
-            }
-
-            MouseArea {
-              id: mtgl
-              anchors.fill: parent
-              hoverEnabled: true
-              onClicked: { dayflow.uilog("expand toggle"); toggleProc.running = true }
-            }
-          }
-        }
-
-        // ---- tab bar ----
-        Row {
-          width: parent.width - content.leftPadding - content.rightPadding
-          spacing: Style.space(4)
-
-          Repeater {
-            model: ["today", "standup", "chat", "week", "agents", "settings"]
-
-            delegate: Rectangle {
-              height: Style.space(26)
-              width: tabLabel.implicitWidth + Style.space(14)
-              radius: Style.cornerRadius
-              color: dayflow.currentTab === modelData
-                ? dayflow.accentFill(0.12)
-                : (tabMouse.containsMouse
-                    ? dayflow.accentFill(0.06)
-                    : "transparent")
-              border.color: dayflow.currentTab === modelData
-                ? dayflow.accentFill(0.45)
-                : "transparent"
-
-              Text {
-                id: tabLabel
-                anchors.centerIn: parent
-                text: modelData.charAt(0).toUpperCase() + modelData.slice(1)
-                textFormat: Text.PlainText
-                color: dayflow.currentTab === modelData ? dayflow.foreground : dayflow.dim
-                font.bold: dayflow.currentTab === modelData
-                font.family: dayflow.fontFamily
-                font.pixelSize: Style.font.caption
-              }
-
-              MouseArea {
-                id: tabMouse
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: { dayflow.uilog("tab " + modelData); dayflow.currentTab = modelData }
-              }
-            }
-          }
-        }
-
-        PanelSeparator { foreground: dayflow.foreground }
-
-        // ---- error / not-configured states ----
-        Column {
-          visible: (dayflow.errorText !== "" && dayflow.currentTab !== "settings") || !dayflow.configured
-          width: parent.width - content.leftPadding - content.rightPadding
-          spacing: Style.space(4)
-
-          PagedText {
-            visible: dayflow.errorText !== ""
-            width: parent.width
-            dayflow: tabLoader.panel
-            bodyHeight: Style.space(26)
-            text: "! " + dayflow.errorText
-          }
-
-          Text {
-            visible: !dayflow.configured
-            width: parent.width
-            text: "Not configured yet. Run `dayflow setup` in a terminal."
-            textFormat: Text.PlainText
-            color: dayflow.foreground
-            font.family: dayflow.fontFamily
-            font.pixelSize: Style.font.body
-            wrapMode: Text.WordWrap
-          }
-        }
-
-        // ---- content ----
-        Loader {
-          id: tabLoader
-          width: parent.width - content.leftPadding - content.rightPadding
-          height: item ? item.implicitHeight : Style.space(120)
-          property var panel: dayflow
-          // Gate order: install surface > first-run onboarding > tabs.
-          function pickSource() {
-            if (dayflow.engineMissing) return "InstallPrompt.qml"
-            if (!dayflow.configured && !dayflow.onboardingSkipped) return "Onboarding.qml"
-            if (dayflow.currentTab === "today") return "TodayTab.qml"
-            if (dayflow.currentTab === "standup") return "StandupTab.qml"
-            if (dayflow.currentTab === "chat") return "ChatTab.qml"
-            if (dayflow.currentTab === "week") return "WeekTab.qml"
-            if (dayflow.currentTab === "agents") return "AgentsTab.qml"
-            return "Settings.qml"
-          }
-          source: pickSource()
-          onLoaded: {
-            if (item && item.dismissed) {
-              item.dismissed.connect(function() { dayflow.onboardingSkipped = true })
-            }
-          }
-        }
-
-        PanelSeparator { foreground: dayflow.foreground }
-
-        // ---- quick actions (pause/resume lives in the header) ----
-        Flow {
-          width: parent.width - content.leftPadding - content.rightPadding
-          height: implicitHeight
-          spacing: Style.space(4)
-
-          Rectangle {
-            height: Style.space(24)
-            width: a2.implicitWidth + Style.space(16)
-            radius: Style.cornerRadius
-            color: dayflow.btnBg(m2.containsMouse)
-            border.color: dayflow.accentFill(0.5)
-            opacity: dayflow.activeApp !== "" ? 1 : 0.45
-            Text {
-              id: a2
-              anchors.centerIn: parent
-              text: "Ignore current app"
-              textFormat: Text.PlainText
-              color: dayflow.activeApp !== "" ? dayflow.foreground : dayflow.dim
-              font.family: dayflow.fontFamily
-              font.pixelSize: Style.font.caption
-            }
-            MouseArea {
-              id: m2
-              anchors.fill: parent
-              hoverEnabled: true
-              enabled: dayflow.activeApp !== ""
-              onClicked: { dayflow.uilog("ignore app " + dayflow.activeApp); if (!ignoreProc.running) ignoreProc.running = true }
-            }
-          }
-
-          Rectangle {
-            height: Style.space(24)
-            width: a3.implicitWidth + Style.space(16)
-            radius: Style.cornerRadius
-            color: dayflow.btnBg(m3.containsMouse)
-            border.color: dayflow.accentFill(0.5)
-            opacity: (dayflow.blocksPending > 0 || summarizeProc.running) ? 1 : 0.45
-            Text {
-              id: a3
-              anchors.centerIn: parent
-              text: summarizeProc.running
-                ? "Summarizing..."
-                : (dayflow.blocksPending > 0
-                    ? "Summarize now (" + dayflow.blocksPending + " pending)"
-                    : "Summarize now")
-              textFormat: Text.PlainText
-              color: (dayflow.blocksPending > 0 || summarizeProc.running) ? dayflow.foreground : dayflow.dim
-              font.family: dayflow.fontFamily
-              font.pixelSize: Style.font.caption
-            }
-            MouseArea {
-              id: m3
-              anchors.fill: parent
-              hoverEnabled: true
-              enabled: dayflow.blocksPending > 0 && !summarizeProc.running
-              onClicked: { dayflow.uilog("summarize now"); if (!summarizeProc.running) summarizeProc.running = true }
-            }
-          }
-
-          Rectangle {
-            height: Style.space(24)
-            width: a4.implicitWidth + Style.space(16)
-            radius: Style.cornerRadius
-            color: dayflow.btnBg(m4.containsMouse)
-            border.color: dayflow.accentFill(0.5)
-            Text {
-              id: a4
-              anchors.centerIn: parent
-              text: "Full view"
-              textFormat: Text.PlainText
-              color: dayflow.foreground
-              font.family: dayflow.fontFamily
-              font.pixelSize: Style.font.caption
-            }
-            MouseArea {
-              id: m4
-              anchors.fill: parent
-              hoverEnabled: true
-              cursorShape: Qt.PointingHandCursor
-              onClicked: { dayflow.uilog("full view open"); dayflow.fullViewOpen = true; dayflow.close() }
-            }
-          }
-
-        }
-
-        // ---- status ----
-        Column {
-          visible: dayflow.engineVersion !== "" &&
-                   dayflow.engineVersion !== dayflow.pluginVersion &&
-                   dayflow.skewDismissedFor !== (dayflow.engineVersion + ":" + dayflow.pluginVersion)
-          width: parent.width - content.leftPadding - content.rightPadding
-          spacing: Style.space(4)
-
-          Text {
-            width: parent.width
-            // engine-newer is a downgrade for install.sh (it installs the
-            // manifest-pinned version) — and an older engine can refuse a
-            // newer DB schema, so there is no safe action to offer here.
-            text: dayflow.versionNewer(dayflow.engineVersion, dayflow.pluginVersion)
-              ? "engine v" + dayflow.engineVersion + " is newer than panel v" + dayflow.pluginVersion +
-                " — update the plugin (the engine won't be downgraded: it could reject the newer DB schema)"
-              : "engine v" + dayflow.engineVersion + " ≠ panel v" + dayflow.pluginVersion +
-                " — update the engine to match the plugin"
-            textFormat: Text.PlainText
-            color: Color.urgent !== undefined ? Color.urgent : dayflow.foreground
-            font.family: dayflow.fontFamily
-            font.pixelSize: Style.font.caption
-            wrapMode: Text.WordWrap
-          }
-
-          Row {
-            spacing: Style.space(6)
-
-            Rectangle {
-              // Downgrade offer hidden when the engine is newer — see above.
-              visible: !dayflow.versionNewer(dayflow.engineVersion, dayflow.pluginVersion)
-              width: updText.implicitWidth + Style.space(12)
-              height: updText.implicitHeight + Style.space(4)
-              radius: Style.cornerRadius
-              color: dayflow.accentFill(updMa.containsMouse ? 0.28 : 0.16)
-              border.color: dayflow.accentFill(0.5)
-              opacity: dayflow.engineInstalling ? 0.5 : 1
-              Text {
-                id: updText
-                anchors.centerIn: parent
-                text: dayflow.engineInstalling ? "Updating…" : "Update engine"
-                textFormat: Text.PlainText
-                color: dayflow.foreground
-                font.family: dayflow.fontFamily
-                font.pixelSize: Style.font.caption
-                font.bold: true
-              }
-              MouseArea {
-                id: updMa
-                anchors.fill: parent
-                enabled: !dayflow.engineInstalling
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: dayflow.requestEngineInstall()
-              }
-            }
-
-            Rectangle {
-              width: disText.implicitWidth + Style.space(12)
-              height: disText.implicitHeight + Style.space(4)
-              radius: Style.cornerRadius
-              color: dayflow.btnBg(disMa.containsMouse)
-              border.color: dayflow.fgFill(0.12)
-              Text {
-                id: disText
-                anchors.centerIn: parent
-                text: "Not now"
-                textFormat: Text.PlainText
-                color: dayflow.dim
-                font.family: dayflow.fontFamily
-                font.pixelSize: Style.font.caption
-              }
-              MouseArea {
-                id: disMa
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: dayflow.skewDismissedFor = dayflow.engineVersion + ":" + dayflow.pluginVersion
-              }
-            }
-          }
-
-          // Installer's stderr tail after a failed Update — InstallPrompt
-          // isn't loaded in the skew path, so surface it here.
-          Text {
-            visible: dayflow.installErr !== ""
-            width: parent.width
-            text: dayflow.installErr
-            textFormat: Text.PlainText
-            color: Color.urgent !== undefined ? Color.urgent : dayflow.foreground
-            font.family: dayflow.fontFamily
-            font.pixelSize: Style.font.caption
-            wrapMode: Text.WordWrap
-          }
-        }
-
-        Text {
-          width: parent.width - content.leftPadding - content.rightPadding
-          text: dayflow.framesToday + " frames · " + dayflow.blocksPending + " pending" +
-                (dayflow.storageText !== "" ? " · " + dayflow.storageText : "") +
-                (dayflow.ignoredApps.length ? " · ignoring " + dayflow.ignoredApps.map(function(a) { return dayflow.appDisplayName(a) }).join(", ") : "")
-          textFormat: Text.PlainText
-          color: dayflow.dim
-          font.family: dayflow.fontFamily
-          font.pixelSize: Style.font.caption
-          elide: Text.ElideRight
-        }
-
-        PagedText {
-          visible: dayflow.notice !== "" && dayflow.currentTab !== "settings"
-          width: parent.width - content.leftPadding - content.rightPadding
-          dayflow: tabLoader.panel
-          bodyHeight: Style.space(26)
-          text: dayflow.notice
-        }
-
-      }
+      Dashboard { anchors.fill: parent; dayflow: panel.state; onCloseRequested: dayflow.close() }
     }
   }
 }

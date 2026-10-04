@@ -15,6 +15,10 @@ Item {
   property string mode: "openrouter"
   property string apiKey: ""
   property string baseUrl: ""
+  property int presetIndex: 0
+  readonly property var presetCandidates: (detected.presets || []).filter(function(p){return root.mode === "openrouter" || p.slug.indexOf(":")>=0})
+  readonly property var currentPreset: presetCandidates.length ? presetCandidates[Math.min(presetIndex,presetCandidates.length-1)] : ({})
+  onPresetCandidatesChanged: presetIndex=Math.max(0,Math.min(presetIndex,presetCandidates.length-1))
   property string modelSlug: "google/gemma-4-31b-it"
   property var catPicks: ({})
   // Set only by the explicit "Enable recaps" click on the consent step —
@@ -33,8 +37,8 @@ Item {
   signal dismissed()
 
   width: parent ? parent.width : 0
-  implicitHeight: col.implicitHeight + Style.space(12)
-  height: implicitHeight
+  implicitHeight: col.implicitHeight + 64
+  height: parent ? parent.height : implicitHeight
 
   Process {
     id: detectProc
@@ -223,6 +227,8 @@ Item {
 
   Component.onCompleted: detectProc.running = true
 
+  DashboardCard {
+    anchors.fill: parent; dayflow: root.dayflow; title: "Get started"
   Column {
     id: col
     width: parent.width
@@ -255,7 +261,7 @@ Item {
         Rectangle {
           width: goText.implicitWidth + Style.space(16)
           height: goText.implicitHeight + Style.space(8)
-          radius: Style.cornerRadius
+          radius: 8
           color: root.dayflow ? root.dayflow.accentFill(0.16) : "transparent"
           border.color: root.dayflow ? root.dayflow.accentFill(0.5) : "transparent"
           Text { id: goText; anchors.centerIn: parent; text: "Get started"
@@ -267,7 +273,7 @@ Item {
         Rectangle {
           width: skipText.implicitWidth + Style.space(16)
           height: skipText.implicitHeight + Style.space(8)
-          radius: Style.cornerRadius
+          radius: 8
           color: root.dayflow ? root.dayflow.btnBg(skipMa.containsMouse) : "transparent"
           border.color: root.dayflow ? root.dayflow.fgFill(0.12) : "transparent"
           Text { id: skipText; anchors.centerIn: parent; text: "Skip for now"
@@ -309,7 +315,7 @@ Item {
           delegate: Rectangle {
             width: modeLabel.implicitWidth + Style.space(14)
             height: modeLabel.implicitHeight + Style.space(8)
-            radius: Style.cornerRadius
+            radius: 8
             color: root.mode === modelData.id
               ? (root.dayflow ? root.dayflow.accentFill(0.16) : "transparent")
               : (modeMa.containsMouse && root.dayflow ? root.dayflow.accentFill(0.08) : "transparent")
@@ -339,36 +345,20 @@ Item {
         visible: root.mode === "openrouter"
         width: parent.width
         height: keyIn.implicitHeight + Style.space(8)
-        radius: Style.cornerRadius
+        radius: 8
         color: root.dayflow ? root.dayflow.fgFill(0.04) : "transparent"
         border.color: root.dayflow ? root.dayflow.fgFill(0.14) : "transparent"
         TextInput { id: keyIn; anchors.fill: parent; anchors.margins: Style.space(5)
-          text: root.apiKey; echoMode: TextInput.Password
+          text: root.apiKey; echoMode: TextInput.Password; clip: true
           color: root.dayflow ? root.dayflow.foreground : Color.foreground
           font.family: root.dayflow ? root.dayflow.fontFamily : Style.font.family
           font.pixelSize: Math.max(12, Style.font.body)
           onTextChanged: root.apiKey = text }
       }
 
-      Rectangle {
-        visible: root.mode === "custom"
-        width: parent.width
-        height: urlIn.implicitHeight + Style.space(8)
-        radius: Style.cornerRadius
-        color: root.dayflow ? root.dayflow.fgFill(0.04) : "transparent"
-        border.color: root.dayflow ? root.dayflow.fgFill(0.14) : "transparent"
-        TextInput { id: urlIn; anchors.fill: parent; anchors.margins: Style.space(5)
-          text: root.baseUrl
-          color: root.dayflow ? root.dayflow.foreground : Color.foreground
-          font.family: root.dayflow ? root.dayflow.fontFamily : Style.font.family
-          font.pixelSize: Math.max(12, Style.font.body)
-          onTextChanged: root.baseUrl = text }
-        Text { anchors.fill: parent; anchors.margins: Style.space(5)
-          visible: urlIn.text === "" && !urlIn.activeFocus
-          text: "http://localhost:11434/v1"
-          color: root.dayflow ? root.dayflow.dim : Color.muted
-          font.family: root.dayflow ? root.dayflow.fontFamily : Style.font.family
-          font.pixelSize: Math.max(12, Style.font.body) }
+      PagedText {
+        visible: root.mode === "custom"; width: parent.width; dayflow: root.dayflow; readOnly: false; showApplyButton: false; label: "Endpoint URL"; bodyHeight: 28
+        text: root.baseUrl; onEdited: function(value) { root.baseUrl = value }
       }
 
       Row {
@@ -376,7 +366,7 @@ Item {
         Rectangle {
           width: nextText.implicitWidth + Style.space(16)
           height: nextText.implicitHeight + Style.space(8)
-          radius: Style.cornerRadius
+          radius: 8
           color: root.dayflow ? root.dayflow.accentFill(0.16) : "transparent"
           border.color: root.dayflow ? root.dayflow.accentFill(0.5) : "transparent"
           opacity: (root.mode === "openrouter" && root.apiKey === "")
@@ -418,31 +408,14 @@ Item {
         font.family: root.dayflow ? root.dayflow.fontFamily : Style.font.family
         font.pixelSize: Math.max(12, Style.font.body); font.bold: true
       }
-      Flow {
-        width: parent.width
-        spacing: Style.space(6)
-        Repeater {
-          model: (root.detected.presets || []).filter(function(p) {
-            return root.mode === "openrouter" || p.slug.indexOf(":") >= 0
-          })
-          delegate: Rectangle {
-            width: presetLabel.implicitWidth + Style.space(14)
-            height: presetLabel.implicitHeight + Style.space(8)
-            radius: Style.cornerRadius
-            color: root.modelSlug === modelData.slug
-              ? (root.dayflow ? root.dayflow.accentFill(0.16) : "transparent")
-              : "transparent"
-            border.color: root.modelSlug === modelData.slug
-              ? (root.dayflow ? root.dayflow.accentFill(0.5) : "transparent")
-              : (root.dayflow ? root.dayflow.fgFill(0.12) : "transparent")
-            Text { id: presetLabel; anchors.centerIn: parent; text: modelData.name
-              color: root.dayflow ? root.dayflow.foreground : Color.foreground
-              font.family: root.dayflow ? root.dayflow.fontFamily : Style.font.family
-              font.pixelSize: Math.max(12, Style.font.caption) }
-            MouseArea { anchors.fill: parent; onClicked: root.modelSlug = modelData.slug }
-          }
-        }
+      Row {
+        spacing: 8
+        CompactButton {dayflow:root.dayflow; text:"‹"; enabled:root.presetIndex>0; onClicked:root.presetIndex--}
+        Text {anchors.verticalCenter:parent.verticalCenter; text:root.presetCandidates.length ? (root.presetIndex+1)+" / "+root.presetCandidates.length : "No presets"; color:root.dayflow.dim; font.family:root.dayflow.fontFamily; font.pixelSize:Math.max(12,Style.font.caption)}
+        CompactButton {dayflow:root.dayflow; text:"›"; enabled:root.presetIndex+1<root.presetCandidates.length; onClicked:root.presetIndex++}
+        CompactButton {dayflow:root.dayflow; text:"Use this model"; enabled:root.presetCandidates.length>0; active:root.modelSlug===root.currentPreset.slug; onClicked:root.modelSlug=root.currentPreset.slug}
       }
+      PagedText {width:parent.width; dayflow:root.dayflow; bodyHeight:28; text:root.currentPreset.name || "Configure a vision model in Settings."}
 
       Text {
         width: parent.width
@@ -461,7 +434,7 @@ Item {
           delegate: Rectangle {
             width: catLabel.implicitWidth + Style.space(14)
             height: catLabel.implicitHeight + Style.space(6)
-            radius: Style.cornerRadius
+            radius: 8
             color: root.catPicks[modelData]
               ? (root.dayflow ? root.dayflow.accentFill(0.16) : "transparent")
               : "transparent"
@@ -487,7 +460,7 @@ Item {
         Rectangle {
           width: finText.implicitWidth + Style.space(16)
           height: finText.implicitHeight + Style.space(8)
-          radius: Style.cornerRadius
+          radius: 8
           color: root.dayflow ? root.dayflow.accentFill(0.16) : "transparent"
           border.color: root.dayflow ? root.dayflow.accentFill(0.5) : "transparent"
           Text { id: finText; anchors.centerIn: parent; text: "Continue"
@@ -561,7 +534,7 @@ Item {
         Rectangle {
           width: enText.implicitWidth + Style.space(16)
           height: enText.implicitHeight + Style.space(8)
-          radius: Style.cornerRadius
+          radius: 8
           color: root.dayflow ? root.dayflow.accentFill(0.16) : "transparent"
           border.color: root.dayflow ? root.dayflow.accentFill(0.5) : "transparent"
           Text { id: enText; anchors.centerIn: parent; text: "Enable recaps"
@@ -573,7 +546,7 @@ Item {
         Rectangle {
           width: offText.implicitWidth + Style.space(16)
           height: offText.implicitHeight + Style.space(8)
-          radius: Style.cornerRadius
+          radius: 8
           color: root.dayflow ? root.dayflow.btnBg(offMa.containsMouse) : "transparent"
           border.color: root.dayflow ? root.dayflow.fgFill(0.12) : "transparent"
           Text { id: offText; anchors.centerIn: parent; text: "Not now"
@@ -621,7 +594,7 @@ Item {
           visible: !root.busy
           width: instText.implicitWidth + Style.space(16)
           height: instText.implicitHeight + Style.space(8)
-          radius: Style.cornerRadius
+          radius: 8
           color: root.dayflow ? root.dayflow.accentFill(0.16) : "transparent"
           border.color: root.dayflow ? root.dayflow.accentFill(0.5) : "transparent"
           Text { id: instText; anchors.centerIn: parent; text: "Install services"
@@ -634,7 +607,7 @@ Item {
           visible: !root.busy
           width: doneText.implicitWidth + Style.space(16)
           height: doneText.implicitHeight + Style.space(8)
-          radius: Style.cornerRadius
+          radius: 8
           color: root.dayflow ? root.dayflow.btnBg(doneMa.containsMouse) : "transparent"
           border.color: root.dayflow ? root.dayflow.fgFill(0.12) : "transparent"
           Text { id: doneText; anchors.centerIn: parent; text: "Done"
@@ -649,5 +622,6 @@ Item {
         }
       }
     }
+  }
   }
 }

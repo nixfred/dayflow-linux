@@ -120,13 +120,13 @@ BarWidget {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: root.available && root.paused ? "ᛯ" : "󰚯"
+    text: root.available ? (root.paused ? "ᛯ " : "󰚯 ") + root.blocksDone : "󰚯"
     opacity: root.available ? 1 : 0.45
     tooltipText: !root.available
       ? "Dayflow engine not installed — click to set it up"
       : (root.paused
-        ? "Dayflow paused — click for timeline, right-click to resume"
-        : "Dayflow recording — click for timeline, right-click to pause")
+        ? "Dayflow · capture paused\n" + root.blocksDone + " summaries · " + root.framesToday + " frames today\nClick: dashboard · Right-click: resume"
+        : "Dayflow · " + root.blocksDone + " summaries · " + root.framesToday + " frames today\nClick: dashboard · Right-click: pause")
     onPressed: function(buttonCode) {
       if (buttonCode === Qt.LeftButton) {
         root.toggle()

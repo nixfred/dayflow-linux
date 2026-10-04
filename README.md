@@ -246,3 +246,10 @@ See [CONTRIBUTING.md](CONTRIBUTING.md), [docs/maintenance.md](docs/maintenance.m
 ## Not a 1:1 port
 
 No audio capture (spike doc says conditional-go), no menu-bar app — the bar widget + full-window panel take that role. The Agents section goes past upstream: five sources instead of two, with drift surfacing and a gated recap pipeline. MIT licensed, like the [original](https://github.com/JerryZLiu/Dayflow).
+
+### Pulse-style interface
+
+The popup and full window now share a wide dashboard with live capture status,
+activity metrics and cards for all eight feature pages. Long results and histories
+use readable explicit pages instead of scrolling. See the
+[interface guide and verification commands](docs/pulse-dashboard.md).

@@ -49,7 +49,7 @@ Column {
       text: "<"
       textFormat: Text.PlainText
       color: cal.dayflow.foreground
-      font.pixelSize: Style.font.body
+      font.pixelSize: Math.max(12,Style.font.body)
       anchors.verticalCenter: parent.verticalCenter
       MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: cal.calShift(-1) }
     }
@@ -58,7 +58,7 @@ Column {
       textFormat: Text.PlainText
       color: cal.dayflow.foreground
       font.family: cal.dayflow.fontFamily
-      font.pixelSize: Style.font.body
+      font.pixelSize: Math.max(12,Style.font.body)
       font.bold: true
       anchors.verticalCenter: parent.verticalCenter
     }
@@ -66,7 +66,7 @@ Column {
       text: ">"
       textFormat: Text.PlainText
       color: cal.dayflow.foreground
-      font.pixelSize: Style.font.body
+      font.pixelSize: Math.max(12,Style.font.body)
       anchors.verticalCenter: parent.verticalCenter
       MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: cal.calShift(1) }
     }
@@ -83,7 +83,7 @@ Column {
         text: modelData
         color: cal.dayflow.dim
         font.family: cal.dayflow.fontFamily
-        font.pixelSize: Style.font.caption
+        font.pixelSize: Math.max(12,Style.font.caption)
       }
     }
   }
@@ -96,7 +96,7 @@ Column {
       delegate: Rectangle {
         width: parent.width / 7
         height: Style.space(24)
-        radius: Style.cornerRadius
+        radius: 8
         property int dayNum: modelData
         property bool isToday: dayNum === new Date().getDate()
           && cal.calMonth === new Date().getMonth()
@@ -112,7 +112,7 @@ Column {
           textFormat: Text.PlainText
           color: isFuture ? cal.dayflow.dim : cal.dayflow.foreground
           font.family: cal.dayflow.fontFamily
-          font.pixelSize: Style.font.caption
+          font.pixelSize: Math.max(12,Style.font.caption)
         }
         MouseArea {
           id: dayMa

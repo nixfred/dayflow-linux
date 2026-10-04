@@ -8,6 +8,7 @@ Column {
   property var dayflow: null
   property string text: ""
   property bool readOnly: true
+  property bool acceptOnBlur: true
   property bool showApplyButton: true
   property int bodyHeight: Style.space(54)
   readonly property int effectiveBodyHeight: Math.max(bodyHeight, Math.ceil(Math.max(12, Style.font.body) * 1.5) + Style.space(10))
@@ -60,10 +61,11 @@ Column {
     desiredCursor = -1
   }
   onTextChanged: rebuild()
-  onWidthChanged: Qt.callLater(rebuild)
-  onEffectiveBodyHeightChanged: Qt.callLater(rebuild)
+  onWidthChanged: layoutTimer.restart()
+  onEffectiveBodyHeightChanged: layoutTimer.restart()
   onPageChanged: syncEditor()
-  Component.onCompleted: Qt.callLater(rebuild)
+  Component.onCompleted: layoutTimer.restart()
+  Timer { id: layoutTimer; interval: 0; onTriggered: root.rebuild() }
 
   Text {
     id: measure
@@ -71,7 +73,7 @@ Column {
     width: Math.max(1, root.width - Style.space(10))
     font: editor.font
     textFormat: Text.PlainText
-    wrapMode: Text.WrapAnywhere
+    wrapMode: Text.Wrap
   }
   Rectangle {
     width: parent.width
@@ -87,7 +89,7 @@ Column {
       readOnly: root.readOnly
       selectByMouse: true
       textFormat: TextEdit.PlainText
-      wrapMode: TextEdit.WrapAnywhere
+      wrapMode: TextEdit.Wrap
       color: root.dayflow ? root.dayflow.foreground : Color.foreground
       font.family: root.dayflow ? root.dayflow.fontFamily : Style.font.family
       font.pixelSize: Math.max(12, Style.font.body)
@@ -97,7 +99,7 @@ Column {
         root.desiredCursor = r.start + cursorPosition
         root.edited(root.text.substring(0, r.start) + text + root.text.substring(r.end))
       }
-      onActiveFocusChanged: if (!activeFocus && !root.readOnly) root.accepted(root.text)
+      onActiveFocusChanged: if (!activeFocus && !root.readOnly && root.acceptOnBlur) root.accepted(root.text)
       Keys.onPressed: function(event) {
         if ((event.modifiers & Qt.ControlModifier) && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter)) {
           root.accepted(root.text); event.accepted = true

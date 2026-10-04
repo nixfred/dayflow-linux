@@ -16,7 +16,7 @@ Rectangle {
 
   height: Style.space(24)
   width: lbl.implicitWidth + Style.space(12)
-  radius: Style.cornerRadius
+  radius: 8
   color: btn.proc && btn.proc.running
     ? btn.dayflow.accentFill(0.10)
     : btn.dayflow.btnBg(ma.containsMouse)
@@ -32,7 +32,7 @@ Rectangle {
     textFormat: Text.PlainText
     color: btn.dayflow.foreground
     font.family: btn.dayflow.fontFamily
-    font.pixelSize: Style.font.caption
+    font.pixelSize: Math.max(12,Style.font.caption)
   }
 
   MouseArea {

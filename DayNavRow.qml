@@ -22,7 +22,7 @@ Row {
       readonly property bool canAdvance: modelData.act <= 0 || (nav.dayflow && nav.dayflow.dayOffset < 0)
       height: Style.space(28)
       width: navText.implicitWidth + Style.space(16)
-      radius: Style.cornerRadius
+      radius: 8
       color: navMouse.containsMouse && nav.dayflow && canAdvance
         ? nav.dayflow.fgFill(0.08)
         : "transparent"
@@ -36,7 +36,7 @@ Row {
         textFormat: Text.PlainText
         color: nav.dayflow ? nav.dayflow.foreground : "white"
         font.family: nav.dayflow ? nav.dayflow.fontFamily : ""
-        font.pixelSize: Style.font.body
+        font.pixelSize: Math.max(12,Style.font.body)
       }
 
       MouseArea {
@@ -66,6 +66,6 @@ Row {
     textFormat: Text.PlainText
     color: nav.dayflow ? nav.dayflow.dim : "gray"
     font.family: nav.dayflow ? nav.dayflow.fontFamily : ""
-    font.pixelSize: Style.font.body
+    font.pixelSize: Math.max(12,Style.font.body)
   }
 }
