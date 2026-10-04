@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -175,6 +176,29 @@ func providerForTask(cfg Config, task string) (Provider, error) {
 		}
 	}
 	return Provider{}, err
+}
+
+// configuredVisionProvider checks the actual vision route without making a
+// model call. Presence of legacy OpenRouter fields is not provider readiness.
+func configuredVisionProvider(cfg Config) (Provider, bool) {
+	p, err := providerForTask(cfg, "vision")
+	if err != nil || !validProviderKind(p.Kind) {
+		return p, false
+	}
+	if p.Kind == "cli" {
+		if p.Command == "" {
+			return p, false
+		}
+		_, err := exec.LookPath(p.Command)
+		return p, err == nil
+	}
+	if strings.TrimSpace(p.Model) == "" {
+		return p, false
+	}
+	if !providerNeedsAuth(p) {
+		return p, strings.TrimSpace(p.APIBaseURL) != ""
+	}
+	return p, resolveProviderKey(p) != ""
 }
 
 // providerNeedsAuth reports whether the provider should receive an

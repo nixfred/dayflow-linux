@@ -317,20 +317,9 @@ func collectDoctorChecks(cfg Config, deep bool) ([]doctorCheck, int) {
 		warn("output auto", "output \"auto\" is ignored when capture_command is set — the custom command controls which monitor is grabbed")
 	}
 	check("config file", fileExists(configPath()), "run: dayflow setup")
-	// A cli-kind provider is a working endpoint too — it shells out to a
-	// subscription-auth'd agent CLI and needs no API key or base URL.
-	cliProvider := false
-	for _, p := range effectiveProviders(cfg) {
-		if p.Enabled && p.Kind == "cli" {
-			cliProvider = true
-		}
-	}
-	// A cli provider without allow_hot_path can't serve the vision task, so
-	// an api-key-less cli-only config still fails to summarize — check the
-	// real route, not just provider presence.
-	_, visErr := providerForTask(cfg, "vision")
-	check("api reachable", (cfg.OpenRouterAPIKey != "" || cfg.APIBaseURL != "" || cliProvider) && visErr == nil,
-		"no usable vision provider — run: dayflow setup, or set allow_hot_path on a cli provider")
+	visionProvider, configured := configuredVisionProvider(cfg)
+	check("api reachable", configured,
+		"no usable vision provider — configure the routed provider's endpoint/key/model, or a cli command with allow_hot_path")
 	// Each enabled cli provider's command must be on PATH — an absent binary
 	// fails at call time, which is a doctor's job to catch early.
 	for _, p := range effectiveProviders(cfg) {
@@ -341,14 +330,23 @@ func collectDoctorChecks(cfg Config, deep bool) ([]doctorCheck, int) {
 		check("cli provider "+p.ID+" on PATH", err == nil,
 			fmt.Sprintf("command %q not found — fix with: dayflow provider set %s command <name>", p.Command, p.ID))
 	}
-	vis, reachable := isVisionModel(cfg, cfg.Model)
-	if !reachable && cfg.APIBaseURL == "" {
-		warn("model vision support", cfg.Model+" — couldn't verify vision support (offline?)")
-	} else if cfg.APIBaseURL != "" {
+	// Verify the routed model rather than a stale legacy model/endpoint.
+	visionCfg := cfg
+	visionCfg.Model = visionProvider.Model
+	visionCfg.APIBaseURL = visionProvider.APIBaseURL
+	if providerNeedsAuth(visionProvider) {
+		visionCfg.OpenRouterAPIKey = resolveProviderKey(visionProvider)
+	}
+	vis, reachable := isVisionModel(visionCfg, visionProvider.Model)
+	if visionProvider.Kind == "cli" {
+		checks = append(checks, doctorCheck{Name: "cli vision provider", Status: "info", Detail: "vision support is determined by the configured CLI"})
+	} else if !reachable && visionCfg.APIBaseURL == "" {
+		warn("model vision support", visionProvider.Model+" — couldn't verify vision support (offline?)")
+	} else if visionCfg.APIBaseURL != "" {
 		checks = append(checks, doctorCheck{Name: "custom endpoint", Status: "ok",
-			Detail: cfg.APIBaseURL + " — vision support not verified"})
+			Detail: visionCfg.APIBaseURL + " — vision support not verified"})
 	} else {
-		check("model is vision-capable", vis, cfg.Model+" cannot read images: dayflow config set model google/gemma-4-31b-it")
+		check("model is vision-capable", vis, visionProvider.Model+" cannot read images: dayflow config set model google/gemma-4-31b-it")
 	}
 	_, hyErr := exec.LookPath("hyprctl")
 	if hyErr != nil && len(cfg.IgnoreApps) > 0 {
@@ -709,13 +707,14 @@ func probeScan(db *sql.DB, query string, args ...any) error {
 
 func runDoctor(cfg Config, jsonOut bool, deep bool) {
 	checks, fail := collectDoctorChecks(cfg, deep)
+	_, configured := configuredVisionProvider(cfg)
 	if jsonOut {
 		out := map[string]interface{}{
 			"checks":         checks,
 			"failures":       fail,
 			"version":        version,
 			"schema_version": schemaVersion,
-			"configured":     fileExists(configPath()) && (cfg.OpenRouterAPIKey != "" || cfg.APIBaseURL != ""),
+			"configured":     fileExists(configPath()) && configured,
 			"data_dir":       dataDir(),
 			"config_path":    configPath(),
 		}
