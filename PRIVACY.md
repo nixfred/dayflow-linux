@@ -12,7 +12,7 @@ Dayflow is a **local-first** automatic work journal. This notice describes what 
 
 ## What leaves your machine
 
-Only the **sampled frames** sent to your chosen AI provider for summarization leave your machine — plus these config-gated additions: TypeSafe Jev judge calls send small block/session descriptors (titles, apps, durations) to the decisions endpoint (`jev_classification: false` disables), and agent-session recaps send a bounded, scrubbed transcript excerpt — to the decisions endpoint for worthiness/quality judging, and to the chat provider for the recap text itself (**off by default** — `agent_recaps: true` opts in; scrubbing removes home paths, tokens, and URL credentials). By default the provider is OpenRouter; you may also configure a local endpoint such as Ollama or LM Studio. Dayflow does not send screenshots or journal data anywhere else.
+Only the **sampled frames** sent to your chosen AI provider for summarization leave your machine — plus these config-gated additions: TypeSafe Jev judge calls send small block/session descriptors (titles, apps, durations) to the decisions endpoint (`jev_classification: false` disables), and agent-session recaps send a bounded, scrubbed transcript excerpt — to the decisions endpoint for worthiness/quality judging, and to the chat provider for the recap text itself (**off by default** — `agent_recaps: true` opts in; scrubbing removes home paths, tokens, and URL credentials). By default the provider is OpenRouter; you may also configure a local endpoint such as Ollama or LM Studio. If you separately enable knowledge sync, distilled journal and agent-workstream summaries also go to the knowledge brain you configure (see below).
 
 ### CLI providers (`kind: "cli"`)
 
@@ -22,11 +22,19 @@ To limit blast radius, the subprocess boundary is hardened: the command runs arg
 
 Residual risk: the deny-list constrains the argv Dayflow builds, not the CLI's own permission profile — the subprocess can still act within whatever tools and permissions its own configuration grants it.
 
+### Knowledge sync (Kurultai)
+
+Knowledge sync is **off by default** (`knowledge_sync: false`). Enabling it adds an export destination: a Kurultai knowledge brain you configure. The daily export pass sends the previous day's distilled journal and agent-workstream summaries; `dayflow sync [date]` requests a sync manually. Unchanged documents are skipped using a content hash. Raw screenshots, transcripts, and individual conversation turns are never included in the sync document.
+
+With `knowledge_transport: "http"`, the document is posted to `<knowledge_url>/ingest` with an authentication secret in the Authorization header. With `"ssh"`, it travels over SSH to `knowledge_ssh_host` and is relayed into `knowledge_container`'s local ingest endpoint. The secret travels on stdin for the SSH relay. Both transports require `knowledge_secret_ref`, which can refer to OmaSeal or contain a literal secret. The destination is yours to choose; no personal host or endpoint is built into Dayflow. The receiving brain controls storage and retention of exported summaries.
+
+Set `knowledge_sync` to `false` to stop future exports. Turning sync off, scrubbing the local journal, or deleting local data does not remove copies already stored in the receiving brain; manage those copies there. Configuration details are in [Knowledge sync](README.md#knowledge-sync-kurultai).
+
 ### Desktop notifications
 
 Optional `notify-send` alerts (capture stall, pause/resume, standup ready, goal pending) go to your session's local notification daemon only — nothing is transmitted. Bodies carry event-class labels such as "capture stalled", never journal text. `notifications.enabled` (master switch) and `notifications.classes` (per-class gates) control them; only `stall` is on by default.
 
-Dayflow does **not** include telemetry, analytics, crash reporting, or cloud synchronization.
+Dayflow does **not** include telemetry, usage analytics reporting, or automatic crash reporting. External knowledge synchronization is a separate, explicitly enabled feature described above.
 
 ## Where your data lives
 
