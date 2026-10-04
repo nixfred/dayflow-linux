@@ -76,6 +76,8 @@ Query:
                           (Claude Code, Codex, OpenCode, Devin, Cursor)
   briefing [YYYY-MM-DD] [--json] [--refresh] Day briefing: sessions grouped into
                           workstreams with condensed turns + status
+  complete --source <claude|codex|manual>  Record a Stop-hook JSON payload from stdin
+  completions [YYYY-MM-DD] [--json]   List immediately recorded agent replies
   ingest [--json] [--reindex]   Index agent-chat turns into the local FTS
                           store (--reindex wipes and rebuilds the index)
   search-agents <q> [--json]   Full-text search indexed agent conversations
@@ -209,6 +211,32 @@ func main() {
 	}
 
 	switch cmd {
+	case "complete":
+		c, err := decodeCompletion(os.Stdin, flagValue(args, "--source"), time.Now())
+		fatal(err)
+		db, err := openDB()
+		fatal(err)
+		defer db.Close()
+		fatal(recordCompletion(db, c))
+		// Valid Stop-hook output, with no notification, API call or sound.
+		fmt.Println("{}")
+
+	case "completions":
+		d, err := dateArg(args, time.Now())
+		fatal(err)
+		db, err := openDB()
+		fatal(err)
+		defer db.Close()
+		replies, err := completionsForDay(db, d)
+		fatal(err)
+		if jsonOut {
+			json.NewEncoder(os.Stdout).Encode(replies)
+		} else {
+			for _, c := range replies {
+				fmt.Printf("%s [%s] %s\n%s\n\n", time.Unix(c.CompletedAt, 0).Format("15:04"), c.Source, c.Project, c.Summary)
+			}
+		}
+
 	case "daemon":
 		fatal(runDaemon(cfg))
 
@@ -1258,15 +1286,21 @@ func printTimeline(cfg Config, day time.Time, asJSON bool) {
 	defer db.Close()
 	blocks, err := blocksForDay(db, day, true)
 	fatal(err)
+	replies, err := completionsForDay(db, day)
+	fatal(err)
 	if asJSON {
 		payload := timelineJSON(blocks)
+		payload["completions"] = replies
 		payload["date"] = day.Format("2006-01-02")
 		json.NewEncoder(os.Stdout).Encode(payload)
 		return
 	}
 	fmt.Printf("== %s ==\n", day.Format("Monday, 2 January 2006"))
-	if len(blocks) == 0 {
-		fmt.Println("(no summarized blocks)")
+	for _, c := range replies {
+		fmt.Printf("\n%s [%s] %s\n  %s\n", time.Unix(c.CompletedAt, 0).Format("15:04"), c.Source, c.Project, c.Summary)
+	}
+	if len(blocks) == 0 && len(replies) == 0 {
+		fmt.Println("(no summarized blocks or recorded agent replies)")
 		return
 	}
 	for _, b := range blocks {

@@ -137,6 +137,7 @@ All query commands accept `--json`.
 | `pricing` | `{}` | model slug → USD/1M tok; `usage` renders `$` only for configured models. E.g. `dayflow config patch '{"pricing":{"google/gemma-4-31b-it":0.09}}'` |
 | `openrouter_api_key` | `""` | API key (or `OPENROUTER_API_KEY` env, or `~/.config/openrouter/keys.json`) |
 | `jev_classification` | `true` | Jev calibrated judgments — category, merge, quality, triage, forecast. Egresses small descriptors to OpenRouter's decisions endpoint; `false` disables Jev classification (summarization still uses your configured chat provider unless that provider is local) |
+| `agent_completions` | `false` | local final-reply watcher; records within a few seconds, independent of model calls; [setup and hooks](docs/immediate-completions.md) |
 | `agent_recaps` | `false` | opt-in: recap generation egresses a bounded, scrubbed excerpt to the chat provider + decisions endpoint |
 | `agent_recap_batch` | `false` | submit uncached recaps as one OpenRouter Batch API job (~50% off, async up to 24h) instead of inline calls; results land on the next briefing pass. Requires the `agent_recap` route to resolve to an OpenRouter endpoint — point `routing.task_provider.agent_recap` at a batch-capable model to run recaps on a different (cheaper or smarter) model than chat |
 | `classification_model` | `typesafe/jev-1.13` | Jev model slug |

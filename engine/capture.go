@@ -884,6 +884,12 @@ func runDaemon(cfg Config) error {
 		return err
 	}
 	defer db.Close()
+	if cfg.AgentCompletions {
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan struct{})
+		go func() { defer close(done); watchCompletions(ctx, db) }()
+		defer func() { cancel(); <-done }()
+	}
 
 	cmdArgs, err := resolveCaptureCommand(cfg)
 	if err != nil {

@@ -14,6 +14,7 @@ Panel {
   property var anchorItem: null
   property var hostWidget: null
   property var blocks: []
+  property var completions: []
   property string dateLabel: ""
   property bool paused: false
   property bool configured: true
@@ -160,6 +161,13 @@ Panel {
     if (dayflow.engineMissing) return
     dayflow.loadTimeline()
     refreshForTab(dayflow.currentTab)
+  }
+
+  Timer {
+    interval: 2000
+    repeat: true
+    running: dayflow.opened && dayflow.currentTab === "today" && !dayflow.engineMissing
+    onTriggered: if (!timelineProc.running) dayflow.loadTimeline()
   }
 
   onCurrentTabChanged: refreshForTab(currentTab)
@@ -365,6 +373,7 @@ Panel {
     try {
       var d = JSON.parse(raw)
       dayflow.blocks = d.blocks || []
+      dayflow.completions = d.completions || []
       // Engine-merged cards (mergeCards in Go), newest first to match the
       // timeline's previous display order. null distinguishes a missing
       // key (older binary) from a genuinely empty array.
@@ -388,6 +397,7 @@ Panel {
       dayflow.syncSkewError()
     } catch (e) {
       dayflow.blocks = []
+      dayflow.completions = []
       dayflow.spans = []
       dayflow.errorText = "could not read timeline"
     }

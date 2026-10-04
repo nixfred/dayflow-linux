@@ -991,6 +991,8 @@ func deleteBlocksLike(db *sql.DB, pattern string) (int64, error) {
 }
 
 func pruneOldEvents(db *sql.DB, cutoff time.Time) {
+	// Optional table: created on the first completion hook.
+	db.Exec(`DELETE FROM agent_completions WHERE completed_at < ?`, cutoff.Unix())
 	db.Exec(`DELETE FROM events WHERE ts < ?`, cutoff.Unix())
 	db.Exec(`DELETE FROM api_calls WHERE ts < ?`, cutoff.Unix())
 	// llm_calls joins the retention window (U5): the cost ledger must not
