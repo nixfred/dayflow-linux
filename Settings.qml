@@ -2,9 +2,9 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.Commons
-import qs.Ui
+import QtQuick.Layouts
 
-Flickable {
+Column {
   id: root
   property var dayflow: parent && parent.panel ? parent.panel : null
   property var presets: []
@@ -12,10 +12,35 @@ Flickable {
   property string usageText: dayflow ? dayflow.storageText : ""
 
   width: parent ? parent.width : 0
-  implicitHeight: Math.min(col.implicitHeight + Style.space(12), Style.space(460))
-  height: implicitHeight
-  contentHeight: col.implicitHeight + Style.space(12)
-  clip: true
+  spacing: Style.space(6)
+  property bool showKey: false
+  property int presetIndex: 0
+  readonly property var currentPreset: presets.length ? presets[Math.min(presetIndex, presets.length - 1)] : ({})
+  property int categoryIndex: 0
+  property int providerIndex: 0
+  property var overrideDrafts: ({})
+  readonly property var currentProvider: providers.length ? providers[Math.min(providerIndex, providers.length - 1)] : ({})
+  readonly property int categoryCount: dayflow ? dayflow.settingsCatModel.count : 0
+  readonly property var currentCategory: categoryCount ? dayflow.settingsCatModel.get(Math.min(categoryIndex, categoryCount - 1)) : ({name: "", description: ""})
+  onCategoryCountChanged: categoryIndex = Math.max(0, Math.min(categoryIndex, categoryCount - 1))
+
+  function setDraft(key, value) {
+    var draft = Object.assign({}, dayflow.configDraft)
+    draft[key] = value
+    dayflow.configDraft = draft
+  }
+  function draft(key, fallback) {
+    return dayflow && dayflow.configDraft[key] !== undefined ? dayflow.configDraft[key] : fallback
+  }
+  function overrideText(key) {
+    var id = currentProvider.id + "/" + key
+    return overrideDrafts[id] !== undefined ? overrideDrafts[id] : ((currentProvider.prompt_overrides || {})[key] || "")
+  }
+  function editOverride(key, value) {
+    var drafts = Object.assign({}, overrideDrafts)
+    drafts[currentProvider.id + "/" + key] = value
+    overrideDrafts = drafts
+  }
 
   function applyPresets(raw) {
     try {
@@ -120,827 +145,231 @@ Flickable {
     }
   }
 
-  Column {
-    id: col
+
+  component Heading: Text {
     width: parent.width
-    spacing: Style.space(14)
-
-    BusyBar {
-      width: parent.width
-      pal: root.dayflow
-      active: modelsProc.running || providersProc.running
-    }
-
+    color: root.dayflow ? root.dayflow.foreground : Color.foreground
+    font.family: root.dayflow ? root.dayflow.fontFamily : Style.font.family
+    font.pixelSize: Math.max(12, Style.font.body)
+    font.bold: true
+    textFormat: Text.PlainText
+    wrapMode: Text.WordWrap
+  }
+  component Note: Text {
+    width: parent.width
+    color: root.dayflow ? root.dayflow.dim : Color.muted
+    font.family: root.dayflow ? root.dayflow.fontFamily : Style.font.family
+    font.pixelSize: Math.max(12, Style.font.caption)
+    textFormat: Text.PlainText
+    wrapMode: Text.WordWrap
+  }
+  component Field: Row {
+    property string label: ""
+    property string key: ""
+    property var fallback: ""
+    property bool numeric: false
+    property bool secret: false
+    property real labelFraction: 0.37
+    width: parent.width
+    spacing: Style.space(5)
+    height: Math.max(Style.space(26), Math.ceil(Math.max(12, Style.font.body) * 1.5) + Style.space(10))
     Text {
-      visible: !dayflow || !dayflow.configLoaded
-      width: parent.width
-      text: "Loading settings..."
-      color: dayflow ? dayflow.dim : Color.dim
-      font.family: dayflow ? dayflow.fontFamily : Style.font.family
-      font.pixelSize: Style.font.body
+      width: parent.width * parent.labelFraction
+      anchors.verticalCenter: parent.verticalCenter
+      text: parent.label
+      color: root.dayflow.dim
+      font.family: root.dayflow.fontFamily
+      font.pixelSize: Math.max(12, Style.font.caption)
+    }
+    Rectangle {
+      width: parent.width - parent.width * parent.labelFraction - parent.spacing
+      height: parent.height
+      radius: Style.cornerRadius
+      color: root.dayflow.fgFill(0.04)
+      border.color: root.dayflow.fgFill(0.12)
+      TextInput {
+        anchors.fill: parent
+        anchors.margins: Style.space(5)
+        text: String(root.draft(parent.parent.key, parent.parent.fallback))
+        echoMode: parent.parent.secret ? TextInput.Password : TextInput.Normal
+        selectByMouse: true
+        color: root.dayflow.foreground
+        font.family: root.dayflow.fontFamily
+        font.pixelSize: Math.max(12, Style.font.body)
+        inputMethodHints: parent.parent.numeric ? Qt.ImhDigitsOnly : Qt.ImhNone
+        onTextEdited: {
+          var value = parent.parent.numeric ? parseInt(text, 10) : text
+          if (!parent.parent.numeric || !isNaN(value)) root.setDraft(parent.parent.key, value)
+        }
+      }
+    }
+  }
+
+  BusyBar { width: parent.width; pal: root.dayflow; active: modelsProc.running || providersProc.running || providerSetProc.running }
+  Note { visible: !root.dayflow || !root.dayflow.configLoaded; text: "Loading settings…" }
+
+  Row {
+    visible: root.dayflow && root.dayflow.configLoaded
+    width: parent.width
+    spacing: Style.space(12)
+
+    Column {
+      width: (parent.width - 2 * parent.spacing) / 3
+      spacing: Style.space(4)
+      Row {
+        spacing: Style.space(8)
+        Heading { width: implicitWidth; anchors.verticalCenter: parent.verticalCenter; text: "AI provider" }
+        CompactButton { dayflow: root.dayflow; text: root.showKey ? "Hide key" : "Show key"; onClicked: root.showKey = !root.showKey }
+      }
+      Field { label: "Provider"; key: "provider"; fallback: "openrouter" }
+      Field { label: "Model"; key: "model"; fallback: "google/gemma-4-31b-it" }
+      Field { label: "API URL"; key: "api_base_url" }
+      Field { label: "API key"; key: "openrouter_api_key"; secret: !root.showKey }
+      Field { label: "App name"; key: "site_name"; fallback: "dayflow-linux" }
+      Note { text: "openrouter / local / custom / mcp. Keys stay masked. App name identifies calls to OpenRouter." }
+      Row {
+        spacing: Style.space(4)
+        CompactButton { dayflow: root.dayflow; text: "‹"; enabled: root.presetIndex > 0; onClicked: root.presetIndex-- }
+        Note { width: implicitWidth; anchors.verticalCenter: parent.verticalCenter; text: "Preset " + (root.presets.length ? root.presetIndex + 1 : 0) + " / " + root.presets.length }
+        CompactButton { dayflow: root.dayflow; text: "›"; enabled: root.presetIndex + 1 < root.presets.length; onClicked: root.presetIndex++ }
+        CompactButton { dayflow: root.dayflow; text: "Use"; enabled: root.presets.length > 0; onClicked: root.setDraft("model", root.currentPreset.slug) }
+      }
+      PagedText { width: parent.width; dayflow: root.dayflow; bodyHeight: Style.space(50); text: [root.currentPreset.name, root.currentPreset.notes].filter(function(value) { return !!value }).join("\n") }
+      Heading { text: "Privacy and automation" }
+      Row {
+        spacing: Style.space(6)
+        CompactButton { dayflow: root.dayflow; text: "Agent recaps: " + (root.draft("agent_recaps", false) ? "On" : "Off"); active: root.draft("agent_recaps", false); onClicked: root.setDraft("agent_recaps", !root.draft("agent_recaps", false)) }
+        CompactButton { dayflow: root.dayflow; text: "Sync: " + (root.draft("knowledge_sync", false) ? "On" : "Off"); active: root.draft("knowledge_sync", false); onClicked: root.setDraft("knowledge_sync", !root.draft("knowledge_sync", false)) }
+      }
+      Note { text: "Recaps are opt-in: scrubbed transcript excerpts go to your chat provider and OpenRouter's decisions endpoint. Agent lists read local stores either way." }
+      Note { text: "Sync is opt-in: distilled journal/workstream summaries go to your configured Kurultai brain. No raw frames or transcripts. Configure its destination in config.json." }
+      CompactButton {
+        dayflow: root.dayflow
+        text: syncNowProc.running ? "Syncing…" : "Sync now"
+        enabled: root.dayflow.config.knowledge_sync === true && !syncNowProc.running
+        onClicked: { root.syncStatus = ""; syncNowProc.running = true }
+      }
     }
 
     Column {
-      visible: dayflow && dayflow.configLoaded
-      width: parent.width
-      spacing: Style.space(10)
-
-      Text {
+      width: (parent.width - 2 * parent.spacing) / 3
+      spacing: Style.space(4)
+      Heading { text: "Capture and storage" }
+      Note { text: "More frames mean more detail and more model usage. Zero retention/caps means no limit of that kind." }
+      Grid {
+        id: captureGrid
         width: parent.width
-        text: "AI provider"
-        color: dayflow.foreground
-        font.family: dayflow.fontFamily
-        font.pixelSize: Style.font.body
-        font.bold: true
-      }
-
-      Text {
-        width: parent.width
-        text: "Choose openrouter, local (Ollama/LM Studio), custom, or mcp."
-        color: dayflow.dim
-        font.family: dayflow.fontFamily
-        font.pixelSize: Style.font.caption
-        wrapMode: Text.WordWrap
-      }
-
-      SettingsField { dayflow: root.dayflow;
-        label: "Provider"
-        value: dayflow.configDraft.provider || "openrouter"
-        hint: "openrouter | local | custom | mcp"
-        onEdited: dayflow.configDraft.provider = text
-      }
-
-      SettingsField { dayflow: root.dayflow;
-        label: "Model"
-        value: dayflow.configDraft.model || ""
-        hint: "e.g. google/gemma-4-31b-it"
-        onEdited: dayflow.configDraft.model = text
-      }
-
-      Text {
-        width: parent.width
-        text: "Presets"
-        color: dayflow.foreground
-        font.family: dayflow.fontFamily
-        font.pixelSize: Style.font.caption
-        font.bold: true
-      }
-
-      Flow {
-        width: parent.width
-        spacing: Style.space(6)
-
-        Repeater {
-          model: root.presets
-          delegate: Rectangle {
-            width: chipText.implicitWidth + Style.space(12)
-            height: chipText.implicitHeight + Style.space(6)
-            radius: Style.cornerRadius
-            color: dayflow.configDraft.model === modelData.slug
-              ? dayflow.accentFill(0.16)
-              : (chipMouse.containsMouse ? dayflow.accentFill(0.08) : dayflow.fgFill(0.04))
-            border.color: dayflow.configDraft.model === modelData.slug
-              ? dayflow.accentFill(0.5)
-              : dayflow.fgFill(0.12)
-
-            Text {
-              id: chipText
-              anchors.centerIn: parent
-              text: modelData.name
-              color: dayflow.foreground
-              font.family: dayflow.fontFamily
-              font.pixelSize: Style.font.caption
-            }
-            MouseArea {
-              id: chipMouse
-              anchors.fill: parent
-              hoverEnabled: true
-              onClicked: dayflow.configDraft.model = modelData.slug
-            }
-          }
-        }
-      }
-
-      Text {
-        width: parent.width
-        text: root.presets.length > 0 && dayflow.configDraft.model
-          ? (function() {
-              for (var i = 0; i < root.presets.length; i++) {
-                if (root.presets[i].slug === dayflow.configDraft.model) return root.presets[i].notes
-              }
-              return ""
-            })()
-          : ""
-        color: dayflow.dim
-        font.family: dayflow.fontFamily
-        font.pixelSize: Style.font.caption
-        wrapMode: Text.WordWrap
-        visible: text !== ""
-      }
-
-      Text {
-        width: parent.width
-        text: "OpenRouter sends this app name in the HTTP-Referer and X-Title headers so its analytics know which app is calling."
-        color: dayflow.dim
-        font.family: dayflow.fontFamily
-        font.pixelSize: Style.font.caption
-        wrapMode: Text.WordWrap
-      }
-
-      SettingsField { dayflow: root.dayflow;
-        label: "App / site name"
-        value: dayflow.configDraft.site_name || "dayflow-linux"
-        hint: "dayflow-linux"
-        onEdited: dayflow.configDraft.site_name = text
-      }
-
-      Rectangle {
-        width: parent.width
-        height: keyBox.implicitHeight + Style.space(14)
-        radius: Style.cornerRadius
-        color: dayflow.fgFill(0.04)
-        border.color: dayflow.fgFill(0.12)
-
-        Column {
-          id: keyBox
-          width: parent.width - Style.space(12)
-          anchors.centerIn: parent
-          spacing: Style.space(4)
-
-          Row {
-            width: parent.width
-            spacing: Style.space(4)
-            Text {
-              width: parent.width - showBtn.width - parent.spacing
-              text: "API key"
-              color: dayflow.foreground
-              font.family: dayflow.fontFamily
-              font.pixelSize: Style.font.body
-              font.bold: true
-            }
-            Rectangle {
-              id: showBtn
-              width: showText.implicitWidth + Style.space(10)
-              height: showText.implicitHeight + Style.space(4)
-              radius: Style.cornerRadius
-              color: dayflow.btnBg(showMa.containsMouse)
-              border.color: dayflow.accentFill(0.35)
-
-              Text {
-                id: showText
-                anchors.centerIn: parent
-                text: keyInput.echoMode === TextInput.Password ? "Show" : "Hide"
-                color: dayflow.foreground
-                font.family: dayflow.fontFamily
-                font.pixelSize: Style.font.caption
-              }
-              MouseArea {
-                id: showMa
-                anchors.fill: parent
-                hoverEnabled: true
-                onClicked: keyInput.echoMode = (keyInput.echoMode === TextInput.Password ? TextInput.Normal : TextInput.Password)
-              }
-            }
-          }
-
-          Text {
-            width: parent.width
-            text: "Stored in ~/.config/dayflow/config.json. Sent only to OpenRouter or a custom endpoint you configure."
-            color: dayflow.dim
-            font.family: dayflow.fontFamily
-            font.pixelSize: Style.font.caption
-            wrapMode: Text.WordWrap
-          }
-
-          Rectangle {
-            width: parent.width
-            height: keyInput.implicitHeight + Style.space(8)
-            radius: Style.cornerRadius
-            color: dayflow.fgFill(0.06)
-            border.color: dayflow.fgFill(0.14)
-
-            TextInput {
-              id: keyInput
-              anchors.fill: parent
-              anchors.margins: Style.space(5)
-              text: dayflow.configDraft.openrouter_api_key || ""
-              echoMode: TextInput.Password
-              color: dayflow.foreground
-              font.family: dayflow.fontFamily
-              font.pixelSize: Style.font.body
-              onTextChanged: dayflow.configDraft.openrouter_api_key = text
-            }
-          }
-        }
-      }
-
-      SettingsField { dayflow: root.dayflow;
-        label: "API base URL"
-        value: dayflow.configDraft.api_base_url || ""
-        hint: "blank for OpenRouter, or http://localhost:11434/v1"
-        onEdited: dayflow.configDraft.api_base_url = text
-      }
-
-      Text {
-        width: parent.width
-        text: "Capture"
-        color: dayflow.foreground
-        font.family: dayflow.fontFamily
-        font.pixelSize: Style.font.body
-        font.bold: true
-      }
-
-      Text {
-        width: parent.width
-        text: "These numbers control how often frames are taken and summarized. Lower interval = more detail, higher cost."
-        color: dayflow.dim
-        font.family: dayflow.fontFamily
-        font.pixelSize: Style.font.caption
-        wrapMode: Text.WordWrap
-      }
-
-      Row {
-        width: parent.width
-        spacing: Style.space(6)
-
-        SettingsField { dayflow: root.dayflow;
-          width: (parent.width - 2 * parent.spacing) / 3
-          label: "Interval (s)"
-          value: String(dayflow.configDraft.capture_interval_sec !== undefined ? dayflow.configDraft.capture_interval_sec : 10)
-          hint: "10"
-          numeric: true
-          onEdited: dayflow.configDraft.capture_interval_sec = parseInt(text, 10) || 0
-        }
-        SettingsField { dayflow: root.dayflow;
-          width: (parent.width - 2 * parent.spacing) / 3
-          label: "Block (min)"
-          value: String(dayflow.configDraft.block_minutes !== undefined ? dayflow.configDraft.block_minutes : 15)
-          hint: "15"
-          numeric: true
-          onEdited: dayflow.configDraft.block_minutes = parseInt(text, 10) || 0
-        }
-        SettingsField { dayflow: root.dayflow;
-          width: (parent.width - 2 * parent.spacing) / 3
-          label: "Frames/block"
-          value: String(dayflow.configDraft.frames_per_block !== undefined ? dayflow.configDraft.frames_per_block : 30)
-          hint: "30"
-          numeric: true
-          onEdited: dayflow.configDraft.frames_per_block = parseInt(text, 10) || 0
-        }
-      }
-
-      Flow {
-        width: parent.width
-        spacing: Style.space(6)
-
-        SettingsField { dayflow: root.dayflow;
-          width: (parent.width - 2 * parent.spacing) / 3
-          label: "JPEG quality"
-          value: String(dayflow.configDraft.jpeg_quality !== undefined ? dayflow.configDraft.jpeg_quality : 55)
-          hint: "55"
-          numeric: true
-          onEdited: dayflow.configDraft.jpeg_quality = parseInt(text, 10) || 0
-        }
-        SettingsField { dayflow: root.dayflow;
-          width: (parent.width - 2 * parent.spacing) / 3
-          label: "Frame max dim (px)"
-          value: String(dayflow.configDraft.frame_max_dim !== undefined ? dayflow.configDraft.frame_max_dim : 1920)
-          hint: "1920; 0 = off"
-          numeric: true
-          onEdited: {
-            var n = parseInt(text, 10)
-            if (!isNaN(n)) dayflow.configDraft.frame_max_dim = n
-          }
-        }
-        SettingsField { dayflow: root.dayflow;
-          width: (parent.width - 2 * parent.spacing) / 3
-          label: "Retention (days)"
-          value: String(dayflow.configDraft.retention_days !== undefined ? dayflow.configDraft.retention_days : 0)
-          hint: "0 = until caps"
-          numeric: true
-          onEdited: dayflow.configDraft.retention_days = parseInt(text, 10) || 0
-        }
-        SettingsField { dayflow: root.dayflow;
-          width: (parent.width - 2 * parent.spacing) / 3
-          label: "Frames cap (MB)"
-          value: String(dayflow.configDraft.max_frames_mb !== undefined ? dayflow.configDraft.max_frames_mb : 20480)
-          hint: "20480"
-          numeric: true
-          onEdited: dayflow.configDraft.max_frames_mb = parseInt(text, 10) || 0
-        }
-        SettingsField { dayflow: root.dayflow;
-          width: (parent.width - 2 * parent.spacing) / 3
-          label: "Text data cap (MB)"
-          value: String(dayflow.configDraft.max_db_mb !== undefined ? dayflow.configDraft.max_db_mb : 10240)
-          hint: "10240"
-          numeric: true
-          onEdited: dayflow.configDraft.max_db_mb = parseInt(text, 10) || 0
-        }
-        SettingsField { dayflow: root.dayflow;
-          width: (parent.width - 2 * parent.spacing) / 3
-          label: "Total cap, legacy (MB)"
-          value: String(dayflow.configDraft.max_storage_mb !== undefined ? dayflow.configDraft.max_storage_mb : 0)
-          hint: "0 = off"
-          numeric: true
-          onEdited: dayflow.configDraft.max_storage_mb = parseInt(text, 10) || 0
-        }
-      }
-
-      Text {
-        width: parent.width
-        text: "Currently using " + (root.usageText !== "" ? root.usageText : "—") + " of data."
-        color: dayflow.dim
-        font.family: dayflow.fontFamily
-        font.pixelSize: Style.font.caption
-        wrapMode: Text.WordWrap
-      }
-
-      Text {
-        width: parent.width
-        text: "Agent recaps"
-        color: dayflow.foreground
-        font.family: dayflow.fontFamily
-        font.pixelSize: Style.font.body
-        font.bold: true
-      }
-
-      Text {
-        width: parent.width
-        text: "Off by default. When on, a bounded, scrubbed transcript excerpt is sent to your chat provider and to OpenRouter's decisions endpoint, which judges which sessions are worth summarizing. Claude Code, Codex, OpenCode, Devin, and Cursor transcripts are read locally for the session list either way."
-        color: dayflow.dim
-        font.family: dayflow.fontFamily
-        font.pixelSize: Style.font.caption
-        wrapMode: Text.WordWrap
-      }
-
-      Row {
-        width: parent.width
-        spacing: Style.space(8)
-
-        Text {
-          width: parent.width - recapsToggle.width - parent.spacing
-          anchors.verticalCenter: parent.verticalCenter
-          text: "Agent-session recaps"
-          color: dayflow.foreground
-          font.family: dayflow.fontFamily
-          font.pixelSize: Style.font.body
-          wrapMode: Text.WordWrap
-        }
-
-        Rectangle {
-          id: recapsToggle
-          width: recapsToggleText.implicitWidth + Style.space(12)
-          height: recapsToggleText.implicitHeight + Style.space(6)
-          radius: Style.cornerRadius
-          color: dayflow.configDraft.agent_recaps === true
-            ? dayflow.accentFill(0.16)
-            : dayflow.btnBg(recapsToggleMa.containsMouse)
-          border.color: dayflow.configDraft.agent_recaps === true
-            ? dayflow.accentFill(0.5)
-            : dayflow.fgFill(0.12)
-
-          Text {
-            id: recapsToggleText
-            anchors.centerIn: parent
-            text: dayflow.configDraft.agent_recaps === true ? "On" : "Off"
-            color: dayflow.foreground
-            font.family: dayflow.fontFamily
-            font.pixelSize: Style.font.caption
-            font.bold: true
-          }
-          MouseArea {
-            id: recapsToggleMa
-            anchors.fill: parent
-            hoverEnabled: true
-            // configDraft is a plain JS object — member writes don't notify,
-            // so reassign a shallow copy to refresh the On/Off bindings
-            // (same pattern as catPicks in Onboarding).
-            onClicked: {
-              var d = Object.assign({}, dayflow.configDraft)
-              d.agent_recaps = !(d.agent_recaps === true)
-              dayflow.configDraft = d
-            }
-          }
-        }
-      }
-
-      Text {
-        width: parent.width
-        text: "Knowledge sync"
-        color: dayflow.foreground
-        font.family: dayflow.fontFamily
-        font.pixelSize: Style.font.body
-        font.bold: true
-      }
-
-      Text {
-        width: parent.width
-        text: "Off by default. When on, the daily export pass also pushes distilled atoms — the day's journal brief and agent-workstream summaries — to a Kurultai brain you configure in config.json (knowledge_url / knowledge_transport). Raw frames, transcripts, and turns are never sent."
-        color: dayflow.dim
-        font.family: dayflow.fontFamily
-        font.pixelSize: Style.font.caption
-        wrapMode: Text.WordWrap
-      }
-
-      Row {
-        width: parent.width
-        spacing: Style.space(8)
-
-        Text {
-          width: parent.width - ksyncToggle.width - parent.spacing
-          anchors.verticalCenter: parent.verticalCenter
-          text: "Sync to knowledge brain"
-          color: dayflow.foreground
-          font.family: dayflow.fontFamily
-          font.pixelSize: Style.font.body
-          wrapMode: Text.WordWrap
-        }
-
-        Rectangle {
-          id: ksyncToggle
-          width: ksyncToggleText.implicitWidth + Style.space(12)
-          height: ksyncToggleText.implicitHeight + Style.space(6)
-          radius: Style.cornerRadius
-          color: dayflow.configDraft.knowledge_sync === true
-            ? dayflow.accentFill(0.16)
-            : dayflow.btnBg(ksyncToggleMa.containsMouse)
-          border.color: dayflow.configDraft.knowledge_sync === true
-            ? dayflow.accentFill(0.5)
-            : dayflow.fgFill(0.12)
-
-          Text {
-            id: ksyncToggleText
-            anchors.centerIn: parent
-            text: dayflow.configDraft.knowledge_sync === true ? "On" : "Off"
-            color: dayflow.foreground
-            font.family: dayflow.fontFamily
-            font.pixelSize: Style.font.caption
-            font.bold: true
-          }
-          MouseArea {
-            id: ksyncToggleMa
-            anchors.fill: parent
-            hoverEnabled: true
-            onClicked: {
-              var d = Object.assign({}, dayflow.configDraft)
-              d.knowledge_sync = !(d.knowledge_sync === true)
-              dayflow.configDraft = d
-            }
-          }
-        }
-      }
-
-      Row {
-        width: parent.width
-        spacing: Style.space(8)
-        visible: dayflow.configDraft.knowledge_sync === true
-
-        Rectangle {
-          width: syncNowText.implicitWidth + Style.space(12)
-          height: syncNowText.implicitHeight + Style.space(6)
-          radius: Style.cornerRadius
-          color: dayflow.btnBg(syncNowMa.containsMouse || syncNowProc.running)
-          border.color: dayflow.fgFill(0.12)
-
-          Text {
-            id: syncNowText
-            anchors.centerIn: parent
-            text: syncNowProc.running ? "Syncing…" : "Sync now"
-            color: dayflow.foreground
-            font.family: dayflow.fontFamily
-            font.pixelSize: Style.font.caption
-            font.bold: true
-          }
-          MouseArea {
-            id: syncNowMa
-            anchors.fill: parent
-            hoverEnabled: true
-            enabled: !syncNowProc.running
-            onClicked: {
-              root.syncStatus = ""
-              syncNowProc.running = true
-            }
-          }
-        }
-
-        Text {
-          width: parent.width - parent.children[0].width - parent.spacing
-          anchors.verticalCenter: parent.verticalCenter
-          visible: root.syncStatus !== ""
-          text: root.syncStatus
-          color: dayflow.dim
-          font.family: dayflow.fontFamily
-          font.pixelSize: Style.font.caption
-          wrapMode: Text.WordWrap
-        }
-      }
-
-      Text {
-        width: parent.width
-        text: "Category buckets"
-        color: dayflow.foreground
-        font.family: dayflow.fontFamily
-        font.pixelSize: Style.font.body
-        font.bold: true
-      }
-
-      Text {
-        width: parent.width
-        text: "The model uses these names and descriptions to classify every block. A category like 'browsing' can be work or personal depending on what is on screen — the classification instructions below decide that."
-        color: dayflow.dim
-        font.family: dayflow.fontFamily
-        font.pixelSize: Style.font.caption
-        wrapMode: Text.WordWrap
-      }
-
+        columns: 2
+        spacing: Style.space(4)
       Repeater {
-        model: dayflow.settingsCatModel
-        delegate: Column {
-          width: parent.width
-          spacing: Style.space(4)
-
-          Row {
-            width: parent.width
-            spacing: Style.space(6)
-
-            Rectangle {
-              width: parent.width * 0.28
-              height: catName.implicitHeight + Style.space(8)
-              radius: Style.cornerRadius
-              color: dayflow.fgFill(0.04)
-              border.color: dayflow.fgFill(0.12)
-
-              TextInput {
-                id: catName
-                anchors.fill: parent
-                anchors.margins: Style.space(5)
-                text: model.name
-                color: dayflow.foreground
-                font.family: dayflow.fontFamily
-                font.pixelSize: Style.font.body
-                onEditingFinished: dayflow.settingsCatModel.setProperty(model.index, "name", text)
-              }
-            }
-
-            Rectangle {
-              width: parent.width - parent.width * 0.28 - remBtn.width - 2 * parent.spacing
-              height: catDesc.implicitHeight + Style.space(8)
-              radius: Style.cornerRadius
-              color: dayflow.fgFill(0.04)
-              border.color: dayflow.fgFill(0.12)
-
-              TextInput {
-                id: catDesc
-                anchors.fill: parent
-                anchors.margins: Style.space(5)
-                text: model.description
-                color: dayflow.foreground
-                font.family: dayflow.fontFamily
-                font.pixelSize: Style.font.body
-                onEditingFinished: dayflow.settingsCatModel.setProperty(model.index, "description", text)
-              }
-            }
-
-            Rectangle {
-              id: remBtn
-              width: delText.implicitWidth + Style.space(12)
-              height: catName.height
-              radius: Style.cornerRadius
-              color: dayflow.btnBg(maDel.containsMouse)
-              border.color: Color.urgent !== undefined ? Color.urgent : dayflow.foreground
-
-              Text {
-                id: delText
-                anchors.centerIn: parent
-                text: "×"
-                color: Color.urgent !== undefined ? Color.urgent : dayflow.foreground
-                font.family: dayflow.fontFamily
-                font.pixelSize: Style.font.body
-              }
-              MouseArea {
-                id: maDel
-                anchors.fill: parent
-                hoverEnabled: true
-                onClicked: dayflow.settingsCatModel.remove(model.index)
-              }
-            }
-          }
+        model: [
+          {label: "Interval (s)", key: "capture_interval_sec", value: 10},
+          {label: "Block (min)", key: "block_minutes", value: 15},
+          {label: "Frames/block", key: "frames_per_block", value: 30},
+          {label: "JPEG quality", key: "jpeg_quality", value: 55},
+          {label: "Max dim (px)", key: "frame_max_dim", value: 1920},
+          {label: "Retention days", key: "retention_days", value: 0},
+          {label: "Frames (MB)", key: "max_frames_mb", value: 20480},
+          {label: "Text (MB)", key: "max_db_mb", value: 10240},
+          {label: "Total MB (old)", key: "max_storage_mb", value: 0}
+        ]
+        delegate: Field {
+          width: (captureGrid.width - captureGrid.spacing) / 2
+          required property var modelData
+          label: modelData.label; key: modelData.key; fallback: modelData.value; numeric: true; labelFraction: 0.62
         }
       }
-
-      Rectangle {
-        width: addBtnText.implicitWidth + Style.space(16)
-        height: addBtnText.implicitHeight + Style.space(8)
-        radius: Style.cornerRadius
-        color: dayflow.btnBg(addMa.containsMouse)
-        border.color: dayflow.accentFill(0.5)
-
-        Text {
-          id: addBtnText
-          anchors.centerIn: parent
-          text: "+ Add category"
-          color: dayflow.foreground
-          font.family: dayflow.fontFamily
-          font.pixelSize: Style.font.body
-        }
-        MouseArea {
-          id: addMa
-          anchors.fill: parent
-          hoverEnabled: true
-          onClicked: dayflow.settingsCatModel.append({ name: "", description: "" })
-        }
       }
-
-      Text {
-        width: parent.width
-        text: "Classification instructions"
-        color: dayflow.foreground
-        font.family: dayflow.fontFamily
-        font.pixelSize: Style.font.body
-        font.bold: true
-      }
-
-      Text {
-        width: parent.width
-        text: "Extra prompt text appended to every summarization request. Use it to teach the model what counts as work vs. personal for you."
-        color: dayflow.dim
-        font.family: dayflow.fontFamily
-        font.pixelSize: Style.font.caption
-        wrapMode: Text.WordWrap
-      }
-
-      Rectangle {
-        width: parent.width
-        height: Math.min(promptBox.implicitHeight + Style.space(12), Style.space(140))
-        radius: Style.cornerRadius
-        color: dayflow.fgFill(0.04)
-        border.color: dayflow.fgFill(0.12)
-
-        TextEdit {
-          id: promptBox
-          anchors.fill: parent
-          anchors.margins: Style.space(6)
-          text: dayflow.configDraft.classification_prompt || ""
-          color: dayflow.foreground
-          font.family: dayflow.fontFamily
-          font.pixelSize: Style.font.body
-          wrapMode: TextEdit.Wrap
-          onTextChanged: dayflow.configDraft.classification_prompt = text
-        }
-      }
-
-      Text {
-        visible: root.providers.length > 0
-        width: parent.width
-        text: "Prompt overrides (advanced)"
-        color: dayflow.foreground
-        font.family: dayflow.fontFamily
-        font.pixelSize: Style.font.body
-        font.bold: true
-      }
-
-      Text {
-        visible: root.providers.length > 0
-        width: parent.width
-        text: "Per-provider replacements for the built-in prompts. Saved on Enter — leave blank to use the default."
-        color: dayflow.dim
-        font.family: dayflow.fontFamily
-        font.pixelSize: Style.font.caption
-        wrapMode: Text.WordWrap
-      }
-
-      Repeater {
-        model: root.providers
-        delegate: Column {
-          id: provBlock
-          property var prov: modelData
-          width: parent.width
-          spacing: Style.space(4)
-
-          Text {
-            width: parent.width
-            text: (provBlock.prov.name || provBlock.prov.id) + "  (" + provBlock.prov.id + ")"
-            color: dayflow.foreground
-            font.family: dayflow.fontFamily
-            font.pixelSize: Style.font.caption
-            font.bold: true
-          }
-
-          Repeater {
-            model: [
-              { label: "Title prompt", key: "title_prompt", field: "title" },
-              { label: "Summary prompt", key: "summary_prompt", field: "summary" },
-              { label: "Detailed prompt", key: "detailed_prompt", field: "detailed" },
-              { label: "Chat prompt", key: "chat_prompt", field: "chat" }
-            ]
-            delegate: Column {
-              id: ovField
-              property var spec: modelData
-              width: parent.width
-              spacing: Style.space(2)
-
-              Text {
-                text: ovField.spec.label
-                color: dayflow.dim
-                font.family: dayflow.fontFamily
-                font.pixelSize: Style.font.caption
-              }
-
-              Rectangle {
-                width: parent.width
-                height: ovInput.implicitHeight + Style.space(8)
-                radius: Style.cornerRadius
-                color: dayflow.fgFill(0.04)
-                border.color: dayflow.fgFill(0.12)
-
-                TextInput {
-                  id: ovInput
-                  anchors.fill: parent
-                  anchors.margins: Style.space(5)
-                  text: (provBlock.prov.prompt_overrides && provBlock.prov.prompt_overrides[ovField.spec.field]) || ""
-                  color: dayflow.foreground
-                  font.family: dayflow.fontFamily
-                  font.pixelSize: Style.font.body
-                  selectByMouse: true
-                  onEditingFinished: {
-                    root.queueProviderWrite(["dayflow", "provider", "set",
-                      provBlock.prov.id, ovField.spec.key, text])
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-
+      Note { text: "Stored: " + (root.usageText || "—") + ". Max dim 0 keeps native resolution." }
+      Heading { text: "Category buckets" }
       Row {
+        spacing: Style.space(4)
+        CompactButton { dayflow: root.dayflow; text: "‹"; enabled: root.categoryIndex > 0; onClicked: root.categoryIndex-- }
+        Note { width: implicitWidth; anchors.verticalCenter: parent.verticalCenter; text: root.categoryCount ? (root.categoryIndex + 1) + " / " + root.categoryCount : "No categories" }
+        CompactButton { dayflow: root.dayflow; text: "›"; enabled: root.categoryIndex + 1 < root.categoryCount; onClicked: root.categoryIndex++ }
+        CompactButton { dayflow: root.dayflow; text: "+"; onClicked: { root.dayflow.settingsCatModel.append({name: "", description: "", color: ""}); root.categoryIndex = root.categoryCount - 1 } }
+        CompactButton { dayflow: root.dayflow; text: "Remove"; enabled: root.categoryCount > 0; onClicked: root.dayflow.settingsCatModel.remove(root.categoryIndex) }
+      }
+      PagedText {
+        visible: root.categoryCount > 0
+        width: parent.width; dayflow: root.dayflow; bodyHeight: Style.space(26); readOnly: false
+        text: root.currentCategory.name || ""
+        onEdited: function(value) { root.dayflow.settingsCatModel.setProperty(root.categoryIndex, "name", value) }
+      }
+      PagedText {
+        visible: root.categoryCount > 0
+        width: parent.width; dayflow: root.dayflow; bodyHeight: Style.space(40); readOnly: false
+        text: root.currentCategory.description || ""
+        onEdited: function(value) { root.dayflow.settingsCatModel.setProperty(root.categoryIndex, "description", value) }
+      }
+    }
+
+    Column {
+      width: (parent.width - 2 * parent.spacing) / 3
+      spacing: Style.space(4)
+      Heading { text: "Classification instructions" }
+      Note { text: "Extra instructions for every summary: describe what counts as work or personal." }
+      PagedText {
+        width: parent.width; dayflow: root.dayflow; bodyHeight: Style.space(66); readOnly: false
+        text: root.draft("classification_prompt", "")
+        onEdited: function(value) { root.setDraft("classification_prompt", value) }
+      }
+      Heading { text: "Provider prompt overrides" }
+      Note { text: "Ctrl+Enter or leave a field to save. Blank uses the built-in prompt." }
+      Row {
+        spacing: Style.space(4)
+        CompactButton { dayflow: root.dayflow; text: "‹"; enabled: root.providerIndex > 0; onClicked: root.providerIndex-- }
+        Note { width: implicitWidth; anchors.verticalCenter: parent.verticalCenter; text: root.providers.length ? (root.providerIndex + 1) + " / " + root.providers.length : "No providers" }
+        CompactButton { dayflow: root.dayflow; text: "›"; enabled: root.providerIndex + 1 < root.providers.length; onClicked: root.providerIndex++ }
+      }
+      PagedText { visible: root.providers.length > 0; width: parent.width; dayflow: root.dayflow; bodyHeight: Style.space(26); text: root.currentProvider.name || root.currentProvider.id || "" }
+      Grid {
+        id: overrideGrid
         width: parent.width
+        columns: 2
         spacing: Style.space(6)
-
-        Rectangle {
-          width: saveText.implicitWidth + Style.space(16)
-          height: saveText.implicitHeight + Style.space(8)
-          radius: Style.cornerRadius
-          color: dayflow.accentFill(0.16)
-          border.color: dayflow.accentFill(0.5)
-
-          Text {
-            id: saveText
-            anchors.centerIn: parent
-            text: "Save settings"
-            color: dayflow.foreground
-            font.family: dayflow.fontFamily
-            font.pixelSize: Style.font.body
-            font.bold: true
-          }
-          MouseArea {
-            anchors.fill: parent
-            onClicked: { dayflow.uilog("settings save"); dayflow.saveConfig() }
-          }
-        }
-
-        Rectangle {
-          width: resetText.implicitWidth + Style.space(16)
-          height: resetText.implicitHeight + Style.space(8)
-          radius: Style.cornerRadius
-          color: dayflow.btnBg(resetMa.containsMouse)
-          border.color: dayflow.fgFill(0.12)
-
-          Text {
-            id: resetText
-            anchors.centerIn: parent
-            text: "Reload"
-            color: dayflow.foreground
-            font.family: dayflow.fontFamily
-            font.pixelSize: Style.font.body
-          }
-          MouseArea {
-            id: resetMa
-            anchors.fill: parent
-            hoverEnabled: true
-            onClicked: { dayflow.uilog("settings reload"); dayflow.loadConfig() }
+      Repeater {
+        model: root.providers.length ? [
+          {label: "Title", key: "title_prompt"}, {label: "Summary", key: "summary_prompt"},
+          {label: "Detailed", key: "detailed_prompt"}, {label: "Chat", key: "chat_prompt"}
+        ] : []
+        delegate: Column {
+          required property var modelData
+          width: (overrideGrid.width - overrideGrid.spacing) / 2
+          spacing: Style.space(2)
+          PagedText {
+            label: modelData.label
+            showApplyButton: false
+            width: parent.width; dayflow: root.dayflow; bodyHeight: Style.space(26); readOnly: false
+            text: root.overrideText(modelData.key)
+            onEdited: function(value) { root.editOverride(modelData.key, value) }
+            onAccepted: function(value) { root.queueProviderWrite(["dayflow", "provider", "set", root.currentProvider.id, modelData.key, value]) }
           }
         }
       }
-
-      Text {
-        width: parent.width
-        text: dayflow.notice
-        color: Color.urgent !== undefined ? Color.urgent : dayflow.foreground
-        font.family: dayflow.fontFamily
-        font.pixelSize: Style.font.caption
-        wrapMode: Text.WordWrap
-        visible: text !== ""
       }
+    }
+  }
 
-      Text {
-        width: parent.width
-        text: "Capture settings require a restart of dayflow-capture to take full effect."
-        color: dayflow.dim
-        font.family: dayflow.fontFamily
-        font.pixelSize: Style.font.caption
-        wrapMode: Text.WordWrap
+  Row {
+    width: parent.width
+    visible: root.dayflow && root.dayflow.configLoaded
+    spacing: Style.space(12)
+    Column {
+      width: parent.width * 0.46
+      spacing: Style.space(4)
+      Row {
+        spacing: Style.space(6)
+        CompactButton { dayflow: root.dayflow; text: "Save settings"; active: true; enabled: !providerSetProc.running && root.pendingProviderWrites.length === 0; onClicked: root.dayflow.saveConfig() }
+        CompactButton { dayflow: root.dayflow; text: "Reload"; onClicked: root.dayflow.loadConfig() }
       }
+      Note { text: "Capture changes require a capture-service restart." }
+    }
+    PagedText {
+      visible: text !== ""
+      width: parent.width - parent.width * 0.46 - parent.spacing
+      dayflow: root.dayflow; bodyHeight: Style.space(26)
+      text: [root.syncStatus, root.dayflow ? root.dayflow.errorText || "" : "", root.dayflow ? root.dayflow.notice : ""].filter(function(value) { return value !== "" }).join("\n")
     }
   }
 }
