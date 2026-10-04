@@ -313,6 +313,8 @@ func patchConfig(patch string) error {
 	if err != nil {
 		return err
 	}
+	previous := cfg
+	previous.Providers = append([]Provider(nil), cfg.Providers...)
 	var patchMap map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(patch), &patchMap); err != nil {
 		return fmt.Errorf("patch must be a JSON object: %w", err)
@@ -419,6 +421,41 @@ func patchConfig(patch string) error {
 	if cfg.Provider == "" {
 		cfg.Provider = "openrouter"
 	}
+	// Mirror changed legacy fields into the active provider. A panel snapshot
+	// can carry an unchanged providers array, so array presence alone cannot
+	// suppress this. Explicit edits to a provider field win over legacy fields.
+	primary := cfg.Routing.Primary
+	if primary == "" && len(cfg.Providers) > 0 {
+		primary = cfg.Providers[0].ID
+	}
+	oldProvider := findProvider(previous, primary)
+	newProvider := findProvider(cfg, primary)
+	for _, key := range []string{"provider", "model", "api_base_url", "openrouter_api_key"} {
+		if _, present := patchMap[key]; !present {
+			continue
+		}
+		changed, explicit := false, false
+		switch key {
+		case "provider":
+			changed = cfg.Provider != previous.Provider
+			explicit = oldProvider != nil && newProvider != nil && newProvider.Kind != oldProvider.Kind
+		case "model":
+			changed = cfg.Model != previous.Model
+			explicit = oldProvider != nil && newProvider != nil && newProvider.Model != oldProvider.Model
+		case "api_base_url":
+			changed = cfg.APIBaseURL != previous.APIBaseURL
+			explicit = oldProvider != nil && newProvider != nil && newProvider.APIBaseURL != oldProvider.APIBaseURL
+		case "openrouter_api_key":
+			changed = cfg.OpenRouterAPIKey != previous.OpenRouterAPIKey
+			explicit = oldProvider != nil && newProvider != nil && newProvider.APIKey != oldProvider.APIKey
+		}
+		// Without an explicit providers patch, changes in cfg can only be legacy
+		// edits. With one, respect the provider field when it changed independently.
+		if _, hasProviders := patchMap["providers"]; changed && (!hasProviders || !explicit) {
+			syncLegacyProvider(&cfg, key)
+		}
+	}
+	migrateLegacyProviders(&cfg)
 	return writeConfig(cfg)
 }
 
