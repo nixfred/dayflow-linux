@@ -17,3 +17,5 @@ Inspect with `dayflow completions --json` or `dayflow today --json` (the additio
 ## Local watcher fallback
 
 Enable `agent_completions` and restart the capture service to watch supported transcript stores every two seconds, separately from capture. This defaults off and makes no model calls. It records explicit Claude `end_turn`/`stop_sequence` replies and Codex `final`/`final_answer` messages, including the native Codex `phase` field; commentary, reasoning, tool replies and unfinished retained messages are ignored. Changed files are read only from their last 1 MiB, with a rolling 24-hour timestamp window. The bounded startup scan can recover recent replies, but is not a complete historical import. Claude projects use the standard one-level store; Codex uses today/yesterday date directories. Other agent sources remain on the existing briefing/index pipeline. The fast Stop hook is preferred; the watcher provides a near-immediate fallback while hook trust/reload is pending.
+
+Codex internal `guardian` approval-review transcripts are excluded; their final JSON decisions are not user work completions.
